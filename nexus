@@ -97,11 +97,16 @@ Write-Host "Erro ao buscar" -ForegroundColor Red
 Write-Host "`nLOGS ULTIMA HORA:" -ForegroundColor Cyan
 try{
 $t=(Get-Date).AddHours(-1)
-Get-WinEvent -FilterHashtable @{LogName='System';StartTime=$t} -MaxEvents 15 | %{
+$eventos = Get-WinEvent -FilterHashtable @{LogName='System';StartTime=$t} -MaxEvents 15 -ErrorAction SilentlyContinue
+if($eventos -and $eventos.Count -gt 0){
+$eventos | %{
 Write-Host "$($_.TimeCreated.ToString('HH:mm')) | ID:$($_.Id) | $($_.ProviderName)"
 }
+}else{
+Write-Host "Sem logs na ultima hora" -ForegroundColor Green
+}
 }catch{
-Write-Host "Sem logs"
+Write-Host "Sem logs" -ForegroundColor Green
 }
 
 Write-Host "`nPressione ENTER para ETAPA 3..."
@@ -248,10 +253,31 @@ try{
 Write-Host "`nLastVisitedPidlMRU (arquivos executados/injetados):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 try{
-    $lv = reg query "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32\LastVisitedPidlMRU" 2>&1
-    $lines = $lv | Where-Object { $_ -match "REG_BINARY" }
+    $lvPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32\LastVisitedPidlMRU"
+    $regQueryPath = $lvPath -replace "HKCU:\\","HKCU\"
+    $rawOutput = reg query $regQueryPath 2>&1
+    $lines = $rawOutput | Where-Object { $_ -match "REG_BINARY" }
     if($lines.Count -gt 0){
         Write-Host "  RASTROS ENCONTRADOS: $($lines.Count) entrada(s)" -ForegroundColor Red
+        foreach($line in $lines){
+            $parts = $line.Trim() -split "\s{2,}"
+            $entryName = $parts[0]
+            try{
+                $prop = (Get-ItemProperty -Path $lvPath -ErrorAction Stop).$entryName
+                if($prop){
+                    $bytes = [byte[]]$prop
+                    $text = [System.Text.Encoding]::Unicode.GetString($bytes) -replace '[^\x20-\x7E]',''
+                    $text = $text.Trim()
+                    if($text.Length -gt 3){
+                        Write-Host "  -> $text" -ForegroundColor Red
+                    }else{
+                        Write-Host "  -> [entrada $entryName - binario]" -ForegroundColor DarkRed
+                    }
+                }
+            }catch{
+                Write-Host "  -> [entrada $entryName - ilegivel]" -ForegroundColor DarkRed
+            }
+        }
     }else{
         Write-Host "  Limpo" -ForegroundColor Green
     }
@@ -261,12 +287,40 @@ try{
 Write-Host "`nRecentDocs (atalhos e arquivos recentes):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 try{
-    $rd = reg query "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs" 2>&1
-    $lines = $rd | Where-Object { $_ -match "REG_BINARY|REG_SZ" }
-    if($lines.Count -gt 0){
-        Write-Host "  RASTROS ENCONTRADOS: $($lines.Count) entrada(s)" -ForegroundColor Red
-    }else{
-        Write-Host "  Limpo" -ForegroundColor Green
+    $rdBase = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs"
+    $subKeys = Get-ChildItem $rdBase -ErrorAction Stop
+    foreach($sk in $subKeys){
+        $ext = $sk.PSChildName
+        $vals = Get-ItemProperty -Path $sk.PSPath -ErrorAction SilentlyContinue
+        $props = $vals.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" -and $_.Name -ne "MRUListEx" }
+        if($props.Count -gt 0){
+            Write-Host "  [$ext]" -ForegroundColor Cyan
+            foreach($p in $props){
+                try{
+                    $bytes = [byte[]]$p.Value
+                    $text = [System.Text.Encoding]::Unicode.GetString($bytes) -replace '[^\x20-\x7E]',''
+                    $text = $text.Trim()
+                    if($text.Length -gt 3){
+                        Write-Host "  -> $text" -ForegroundColor Red
+                    }
+                }catch{}
+            }
+        }
+    }
+    $root = Get-ItemProperty -Path $rdBase -ErrorAction SilentlyContinue
+    $rootProps = $root.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" -and $_.Name -ne "MRUListEx" }
+    if($rootProps.Count -gt 0){
+        Write-Host "  [raiz]" -ForegroundColor Cyan
+        foreach($p in $rootProps){
+            try{
+                $bytes = [byte[]]$p.Value
+                $text = [System.Text.Encoding]::Unicode.GetString($bytes) -replace '[^\x20-\x7E]',''
+                $text = $text.Trim()
+                if($text.Length -gt 3){
+                    Write-Host "  -> $text" -ForegroundColor Red
+                }
+            }catch{}
+        }
     }
 }catch{ Write-Host "  Chave nao existe (Limpo)" -ForegroundColor Green }
 
