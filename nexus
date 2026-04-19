@@ -1,5 +1,23 @@
-function warik-radar {
-while($true){
+# === VERIFICACAO DE ADMIN ===
+$IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $IsAdmin) {
+    Write-Host "`n[AVISO] Este script NAO esta rodando como Administrador." -ForegroundColor Red
+    Write-Host "[ACAO] Clique com botao direito no PowerShell e selecione 'Executar como Administrador'." -ForegroundColor Yellow
+    Pause
+    exit 1
+}
+
+function Wait-ForEnter {
+    Start-Sleep -Seconds 1
+    Write-Host "Pressione ENTER para continuar..." -ForegroundColor Yellow
+    while ($true) {
+        if ([System.Console]::KeyAvailable) {
+            $key = [System.Console]::ReadKey($true)
+            if ($key.Key -eq "Enter") { break }
+        }
+        Start-Sleep -Milliseconds 100
+    }
+}
 
 # =========================
 # ETAPA 1
@@ -10,45 +28,47 @@ $h = Get-Date -Format "HH:mm:ss"
 Write-Host ("WARIK RADAR".PadRight(70)+$h) -ForegroundColor Cyan
 Write-Host "===================================================================="
 
-Write-Host "TELAS CONECTADAS:" -ForegroundColor White
+Write-Host "`nTELAS CONECTADAS:" -ForegroundColor White
+Write-Host "--------------------------------------------------------------------"
 try{
-$m=(Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorBasicDisplayParams).Count
-Write-Host "$m monitor(es) detectado(s)" -ForegroundColor Green
-}catch{ Write-Host "Desativado" -ForegroundColor Red }
+    $m=(Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorBasicDisplayParams).Count
+    Write-Host "  $m monitor(es) detectado(s)" -ForegroundColor Green
+}catch{ Write-Host "  Desativado" -ForegroundColor Red }
 
 Write-Host "`nAPLICATIVOS ABERTOS:" -ForegroundColor White
 Write-Host "--------------------------------------------------------------------"
 Get-Process | Sort ProcessName | %{
-Write-Host "$($_.ProcessName) [$($_.Id)]"
+    Write-Host "  $($_.ProcessName) [$($_.Id)]"
 }
 
 Write-Host "`nANTIVIRUS:" -ForegroundColor Green
 Write-Host "--------------------------------------------------------------------"
 try{
-$s=Get-MpComputerStatus
-if($s.AntivirusEnabled){Write-Host "Antivirus: ON" -ForegroundColor Green}else{Write-Host "Antivirus: Desativado" -ForegroundColor Red}
-if($s.RealTimeProtectionEnabled){Write-Host "Tempo Real: ON" -ForegroundColor Green}else{Write-Host "Tempo Real: Desativado" -ForegroundColor Red}
+    $s=Get-MpComputerStatus
+    if($s.AntivirusEnabled){Write-Host "  Antivirus: ON" -ForegroundColor Green}else{Write-Host "  Antivirus: Desativado" -ForegroundColor Red}
+    if($s.RealTimeProtectionEnabled){Write-Host "  Tempo Real: ON" -ForegroundColor Green}else{Write-Host "  Tempo Real: Desativado" -ForegroundColor Red}
 }catch{
-Write-Host "Windows Defender indisponivel" -ForegroundColor Red
+    Write-Host "  Windows Defender indisponivel" -ForegroundColor Red
 }
 
 Write-Host "`nFIREWALL:" -ForegroundColor Magenta
 Write-Host "--------------------------------------------------------------------"
 try{
-Get-NetFirewallProfile | %{
-if($_.Enabled){Write-Host "$($_.Name): ON" -ForegroundColor Green}
-else{Write-Host "$($_.Name): Desativado" -ForegroundColor Red}
-}
-}catch{ Write-Host "Firewall indisponivel" -ForegroundColor Red }
+    Get-NetFirewallProfile | %{
+        if($_.Enabled){Write-Host "  $($_.Name): ON" -ForegroundColor Green}
+        else{Write-Host "  $($_.Name): Desativado" -ForegroundColor Red}
+    }
+}catch{ Write-Host "  Firewall indisponivel" -ForegroundColor Red }
 
 Write-Host "`nISOLAMENTO DE NUCLEO:" -ForegroundColor Yellow
+Write-Host "--------------------------------------------------------------------"
 try{
-$c=(Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity").Enabled
-if($c -eq 1){Write-Host "ON" -ForegroundColor Green}else{Write-Host "Desativado" -ForegroundColor Red}
-}catch{ Write-Host "Desativado" -ForegroundColor Red }
+    $c=(Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity").Enabled
+    if($c -eq 1){Write-Host "  ON" -ForegroundColor Green}else{Write-Host "  Desativado" -ForegroundColor Red}
+}catch{ Write-Host "  Desativado" -ForegroundColor Red }
 
-Write-Host "`nPressione ENTER para ETAPA 2..."
-Read-Host
+Write-Host ""
+Wait-ForEnter
 
 # =========================
 # ETAPA 2
@@ -59,58 +79,61 @@ $h = Get-Date -Format "HH:mm:ss"
 Write-Host ("WARIK RADAR - ETAPA 2".PadRight(70)+$h) -ForegroundColor Cyan
 Write-Host "===================================================================="
 
-Write-Host "PASTAS NAS EXCLUSOES:" -ForegroundColor Yellow
+Write-Host "`nPASTAS NAS EXCLUSOES:" -ForegroundColor Yellow
+Write-Host "--------------------------------------------------------------------"
 try{
-$ex=(Get-MpPreference).ExclusionPath
-$pastas=@()
-foreach($i in $ex){
-if(Test-Path $i -PathType Container){$pastas+=$i}
-}
-if($pastas.Count -gt 0){$pastas | % {Write-Host $_}}else{Write-Host "Nenhuma"}
-}catch{ Write-Host "Nenhuma" }
+    $ex=(Get-MpPreference).ExclusionPath
+    $pastas=@()
+    foreach($i in $ex){
+        if(Test-Path $i -PathType Container){$pastas+=$i}
+    }
+    if($pastas.Count -gt 0){$pastas | % {Write-Host "  $_" -ForegroundColor Red}}else{Write-Host "  Nenhuma" -ForegroundColor Green}
+}catch{ Write-Host "  Nenhuma" -ForegroundColor Green }
 
-Write-Host "`nARQUIVOS MATRIX / MATCHA / EXTERNAL:" -ForegroundColor Red
+Write-Host "`nARQUIVOS MATRIX / MATCHA / EXTERNAL / XENO:" -ForegroundColor Red
+Write-Host "--------------------------------------------------------------------"
 try{
-$locais=@(
-"$env:USERPROFILE\Downloads",
-"$env:USERPROFILE\Desktop"
-)
-$found=@()
-foreach($p in $locais){
-if(Test-Path $p){
-$found += Get-ChildItem $p -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
-$_.Name -match "matrix|matcha|external|xeno"
-}
-}
-}
-if($found.Count -gt 0){
-$found | Sort-Object LastWriteTime -Descending | Select-Object -First 20 | %{
-Write-Host "$($_.Name) - $($_.DirectoryName)" -ForegroundColor Red
-}
-}else{
-Write-Host "Nenhum encontrado" -ForegroundColor Green
-}
+    $locais=@(
+        "$env:USERPROFILE\Downloads",
+        "$env:USERPROFILE\Desktop"
+    )
+    $found=@()
+    foreach($p in $locais){
+        if(Test-Path $p){
+            $found += Get-ChildItem $p -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
+                $_.Name -match "matrix|matcha|external|xeno"
+            }
+        }
+    }
+    if($found.Count -gt 0){
+        $found | Sort-Object LastWriteTime -Descending | Select-Object -First 20 | %{
+            Write-Host "  $($_.Name) - $($_.DirectoryName)" -ForegroundColor Red
+        }
+    }else{
+        Write-Host "  Nenhum encontrado" -ForegroundColor Green
+    }
 }catch{
-Write-Host "Erro ao buscar" -ForegroundColor Red
+    Write-Host "  Erro ao buscar" -ForegroundColor Red
 }
 
 Write-Host "`nLOGS ULTIMA HORA:" -ForegroundColor Cyan
+Write-Host "--------------------------------------------------------------------"
 try{
-$t=(Get-Date).AddHours(-1)
-$eventos = Get-WinEvent -FilterHashtable @{LogName='System';StartTime=$t} -MaxEvents 15 -ErrorAction SilentlyContinue
-if($eventos -and $eventos.Count -gt 0){
-$eventos | %{
-Write-Host "$($_.TimeCreated.ToString('HH:mm')) | ID:$($_.Id) | $($_.ProviderName)"
-}
-}else{
-Write-Host "Sem logs na ultima hora" -ForegroundColor Green
-}
+    $t=(Get-Date).AddHours(-1)
+    $eventos = Get-WinEvent -FilterHashtable @{LogName='System';StartTime=$t} -MaxEvents 15 -ErrorAction SilentlyContinue
+    if($eventos -and $eventos.Count -gt 0){
+        $eventos | %{
+            Write-Host "  $($_.TimeCreated.ToString('HH:mm')) | ID:$($_.Id) | $($_.ProviderName)"
+        }
+    }else{
+        Write-Host "  Sem logs na ultima hora" -ForegroundColor Green
+    }
 }catch{
-Write-Host "Sem logs" -ForegroundColor Green
+    Write-Host "  Sem logs" -ForegroundColor Green
 }
 
-Write-Host "`nPressione ENTER para ETAPA 3..."
-Read-Host
+Write-Host ""
+Wait-ForEnter
 
 # =========================
 # ETAPA 3 - REGISTRY & RECENT CHECK
@@ -126,24 +149,24 @@ Write-Host "`nRECENT FILES (matrix/xeno/external):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 $recentPath = "$env:APPDATA\Microsoft\Windows\Recent"
 try{
-$recentFound = Get-ChildItem $recentPath -File -ErrorAction SilentlyContinue | Where-Object {
-$_.Name -match "matrix|matcha|xeno|external|newui|oldui"
-}
-if($recentFound.Count -gt 0){
-$recentFound | Sort-Object LastWriteTime -Descending | %{
-Write-Host "ENCONTRADO: $($_.Name)" -ForegroundColor Red
-Write-Host "  Caminho : $($_.FullName)" -ForegroundColor DarkRed
-Write-Host "  Modificado: $($_.LastWriteTime)" -ForegroundColor DarkRed
-}
-}else{
-Write-Host "Nenhum rastro encontrado no Recent" -ForegroundColor Green
-}
+    $recentFound = Get-ChildItem $recentPath -File -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -match "matrix|matcha|xeno|external|newui|oldui"
+    }
+    if($recentFound.Count -gt 0){
+        $recentFound | Sort-Object LastWriteTime -Descending | %{
+            Write-Host "  ENCONTRADO: $($_.Name)" -ForegroundColor Red
+            Write-Host "  Caminho : $($_.FullName)" -ForegroundColor DarkRed
+            Write-Host "  Modificado: $($_.LastWriteTime)" -ForegroundColor DarkRed
+        }
+    }else{
+        Write-Host "  Nenhum rastro encontrado no Recent" -ForegroundColor Green
+    }
 }catch{
-Write-Host "Erro ao acessar Recent" -ForegroundColor Red
+    Write-Host "  Erro ao acessar Recent" -ForegroundColor Red
 }
 
 # --- OPENSAVEPIDLMRU ---
-Write-Host "`nREGISTRY CHECK (OpenSavePidlMRU):" -ForegroundColor Yellow
+Write-Host "`nOPENSAVEPIDLMRU (arquivos abertos/salvos):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 
 $systemProps = @("Count","Length","LongLength","Rank","SyncRoot","IsReadOnly","IsFixedSize","IsSynchronized","MRUListEx","PSPath","PSParentPath","PSChildName","PSDrive","PSProvider")
@@ -156,19 +179,19 @@ $regPaths = @(
 
 foreach($rp in $regPaths){
     $label = $rp.Split("\")[-1]
-    Write-Host "`n[$label]" -ForegroundColor Cyan
+    Write-Host "`n  [$label]" -ForegroundColor Cyan
     $regQueryPath = $rp -replace "HKCU:\\","HKCU\"
     try{
         $rawOutput = reg query $regQueryPath 2>&1
         if($LASTEXITCODE -ne 0 -or $rawOutput -match "nao foi possivel|cannot find|error"){
-            Write-Host "  Chave nao existe (Limpo)" -ForegroundColor Green
+            Write-Host "  Limpo" -ForegroundColor Green
             continue
         }
         $lines = $rawOutput | Where-Object {
             $_ -match "REG_BINARY" -and $_ -notmatch ($systemProps -join "|")
         }
         if($lines.Count -gt 0){
-            Write-Host "  RASTROS ENCONTRADOS: $($lines.Count) entrada(s)" -ForegroundColor Red
+            Write-Host "  RASTROS: $($lines.Count) entrada(s)" -ForegroundColor Red
             foreach($line in $lines){
                 $parts = $line.Trim() -split "\s{2,}"
                 $entryName = $parts[0]
@@ -196,7 +219,7 @@ foreach($rp in $regPaths){
     }
 }
 
-# --- COMPATIBILITY ASSISTANT (EXEs executados) ---
+# --- COMPATIBILITY ASSISTANT ---
 Write-Host "`nCOMPATIBILITY ASSISTANT (EXEs executados):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 try{
@@ -210,7 +233,7 @@ try{
     }
 }catch{ Write-Host "  Chave nao existe (Limpo)" -ForegroundColor Green }
 
-# --- WINRAR ARCHISTORY ---
+# --- WINRAR ---
 Write-Host "`nWINRAR ArcHistory (.rar executados):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 try{
@@ -250,8 +273,8 @@ try{
     if(-not $found3){ Write-Host "  Nenhum suspeito encontrado" -ForegroundColor Green }
 }catch{ Write-Host "  Chave nao existe (Limpo)" -ForegroundColor Green }
 
-# --- APPSWITCHED (EXEs desde o inicio) ---
-Write-Host "`nAppSwitched (EXEs desde o inicio):" -ForegroundColor Yellow
+# --- APPSWITCHED ---
+Write-Host "`nAppSwitched (EXEs usados desde o inicio):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 try{
     $asw = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FeatureUsage\AppSwitched" -ErrorAction Stop
@@ -272,7 +295,7 @@ try{
     $rawOutput = reg query $regQueryPath 2>&1
     $lines = $rawOutput | Where-Object { $_ -match "REG_BINARY" }
     if($lines.Count -gt 0){
-        Write-Host "  RASTROS ENCONTRADOS: $($lines.Count) entrada(s)" -ForegroundColor Red
+        Write-Host "  RASTROS: $($lines.Count) entrada(s)" -ForegroundColor Red
         foreach($line in $lines){
             $parts = $line.Trim() -split "\s{2,}"
             $entryName = $parts[0]
@@ -314,9 +337,7 @@ try{
                     $bytes = [byte[]]$p.Value
                     $text = [System.Text.Encoding]::Unicode.GetString($bytes) -replace '[^\x20-\x7E]',''
                     $text = $text.Trim()
-                    if($text.Length -gt 3){
-                        Write-Host "  -> $text" -ForegroundColor Red
-                    }
+                    if($text.Length -gt 3){ Write-Host "  -> $text" -ForegroundColor Red }
                 }catch{}
             }
         }
@@ -330,16 +351,14 @@ try{
                 $bytes = [byte[]]$p.Value
                 $text = [System.Text.Encoding]::Unicode.GetString($bytes) -replace '[^\x20-\x7E]',''
                 $text = $text.Trim()
-                if($text.Length -gt 3){
-                    Write-Host "  -> $text" -ForegroundColor Red
-                }
+                if($text.Length -gt 3){ Write-Host "  -> $text" -ForegroundColor Red }
             }catch{}
         }
     }
 }catch{ Write-Host "  Chave nao existe (Limpo)" -ForegroundColor Green }
 
 # --- USERASSIST ---
-Write-Host "`nUserAssist (historico de programas - ROT13):" -ForegroundColor Yellow
+Write-Host "`nUserAssist (historico ROT13 - Application Disabler):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 try{
     $ua = Get-ChildItem "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\UserAssist" -ErrorAction Stop
@@ -349,7 +368,7 @@ try{
         $props = $vals.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
         foreach($p in $props){
             if($p.Name -match "Abby|Nbybt|NoLog|Abybth"){
-                Write-Host "  ATENCAO: Possivel Application Disabler detectado -> $($p.Name)" -ForegroundColor Red
+                Write-Host "  ATENCAO: Possivel Application Disabler -> $($p.Name)" -ForegroundColor Red
                 $noLog = $true
             }
         }
@@ -357,31 +376,14 @@ try{
     if(-not $noLog){ Write-Host "  Nenhum disabler detectado" -ForegroundColor Green }
 }catch{ Write-Host "  Erro ao verificar UserAssist" -ForegroundColor DarkYellow }
 
-# --- BAM ---
-Write-Host "`nBAM (arquivos executados pelo sistema):" -ForegroundColor Yellow
-Write-Host "--------------------------------------------------------------------"
-try{
-    $bamBase = "HKLM:\SYSTEM\CurrentControlSet\Services\bam\State\UserSettings"
-    $users = Get-ChildItem $bamBase -ErrorAction Stop
-    foreach($u in $users){
-        $vals = Get-ItemProperty -Path $u.PSPath -ErrorAction SilentlyContinue
-        $props = $vals.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" -and $_.Name -match "matrix|matcha|xeno|external|newui|oldui|inject" }
-        if($props.Count -gt 0){
-            Write-Host "  SUSPEITO [$($u.PSChildName)]:" -ForegroundColor Red
-            $props | %{ Write-Host "  -> $($_.Name)" -ForegroundColor DarkRed }
-        }
-    }
-    Write-Host "  Verificacao BAM concluida" -ForegroundColor Green
-}catch{ Write-Host "  Erro ao verificar BAM" -ForegroundColor DarkYellow }
-
 # --- DISALLOWRUN ---
-Write-Host "`nDisallowRun (bloqueio de .exe - pode ocultar SS tools):" -ForegroundColor Yellow
+Write-Host "`nDisallowRun (bloqueio de .exe):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 try{
     $dr = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\DisallowRun" -ErrorAction Stop
     $props = $dr.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
     if($props.Count -gt 0){
-        Write-Host "  ATENCAO: EXEs bloqueados encontrados:" -ForegroundColor Red
+        Write-Host "  ATENCAO: EXEs bloqueados:" -ForegroundColor Red
         $props | %{ Write-Host "  -> $($_.Value)" -ForegroundColor DarkRed }
     }else{
         Write-Host "  Nenhum bloqueio" -ForegroundColor Green
@@ -401,7 +403,7 @@ try{
 }catch{ Write-Host "  Erro ao verificar USBSTOR" -ForegroundColor DarkYellow }
 
 # --- AUTORUN ---
-Write-Host "`nAUTORUN (programas que iniciam com o Windows):" -ForegroundColor Yellow
+Write-Host "`nAUTORUN (programas que iniciam com Windows):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 $runKeys = @(
     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
@@ -440,11 +442,11 @@ foreach($uk in $uninstallKeys){
 }
 Write-Host "  Verificacao concluida" -ForegroundColor Green
 
-Write-Host "`nPressione ENTER para ETAPA 4..."
-Read-Host
+Write-Host ""
+Wait-ForEnter
 
 # =========================
-# ETAPA 4 - MUICACHE NEWUI/OLDUI
+# ETAPA 4 - MUICACHE CHECK
 # =========================
 Clear-Host
 $h = Get-Date -Format "HH:mm:ss"
@@ -452,7 +454,7 @@ $h = Get-Date -Format "HH:mm:ss"
 Write-Host ("WARIK RADAR - ETAPA 4 - MUICACHE CHECK".PadRight(70)+$h) -ForegroundColor Cyan
 Write-Host "===================================================================="
 
-Write-Host "`nMUICache (newui.exe / oldui.exe / Xeno / Valex):" -ForegroundColor Yellow
+Write-Host "`nMUICache (newui / oldui / Xeno / Valex):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
 $muiTargets4 = @(
     @{ Label = "Xeno";           Pattern = "Xeno\.exe\.FriendlyAppName$" },
@@ -480,9 +482,175 @@ try{
     Write-Host "  Chave nao existe (Limpo)" -ForegroundColor Green
 }
 
-Write-Host "`nPressione ENTER para reiniciar..."
-Read-Host
-}
+Write-Host ""
+Wait-ForEnter
+
+# =========================
+# ETAPA 5 - PREFETCH VIEWER
+# =========================
+Clear-Host
+$h = Get-Date -Format "HH:mm:ss"
+
+Write-Host ("WARIK RADAR - ETAPA 5 - PREFETCH VIEWER".PadRight(70)+$h) -ForegroundColor Cyan
+Write-Host "===================================================================="
+
+Write-Host "`nPREFETCH:" -ForegroundColor Yellow
+Write-Host "--------------------------------------------------------------------"
+
+$regPathPf = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters"
+try{
+    $currentValue = Get-ItemPropertyValue -Path $regPathPf -Name EnablePrefetcher -ErrorAction Stop
+    if($currentValue -ne 3){
+        Set-ItemProperty -Path $regPathPf -Name EnablePrefetcher -Value 3 -ErrorAction Stop
+        Write-Host "  Prefetcher habilitado." -ForegroundColor Green
+    }else{
+        Write-Host "  Prefetcher ja esta habilitado." -ForegroundColor Green
+    }
+}catch{
+    Write-Host "  Erro ao verificar Prefetcher." -ForegroundColor Red
 }
 
-warik-radar
+$prefetchDir = "C:\Windows\Prefetch"
+try{
+    $pfItems = Get-ChildItem -Path $prefetchDir -Filter *.pf -ErrorAction Stop | Sort-Object LastWriteTime -Descending
+    if($pfItems.Count -eq 0){
+        Write-Host "  Nenhum arquivo prefetch encontrado." -ForegroundColor Red
+    }else{
+        Write-Host "  $($pfItems.Count) arquivo(s) encontrado(s). Abrindo visualizador..." -ForegroundColor Green
+
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+
+        $form = New-Object System.Windows.Forms.Form
+        $form.Text = "Prefetch Viewer"
+        $form.WindowState = 'Maximized'
+        $form.MinimumSize = New-Object System.Drawing.Size(800, 600)
+        $form.StartPosition = "CenterScreen"
+        $form.BackColor = [System.Drawing.Color]::White
+        $form.Topmost = $true
+
+        $dgv = New-Object System.Windows.Forms.DataGridView
+        $dgv.Dock = 'Fill'
+        $dgv.ReadOnly = $true
+        $dgv.BackgroundColor = [System.Drawing.Color]::White
+        $dgv.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Black
+        $dgv.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::Black
+        $dgv.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::LightGray
+        $dgv.EnableHeadersVisualStyles = $false
+        $dgv.AutoSizeColumnsMode = 'AllCells'
+        $form.Controls.Add($dgv)
+
+        $table = New-Object System.Data.DataTable
+        $table.Columns.Add("FileName", [string]) | Out-Null
+        $table.Columns.Add("Size (KB)", [double]) | Out-Null
+        $table.Columns.Add("LastWriteTime", [datetime]) | Out-Null
+
+        foreach($file in $pfItems){
+            $row = $table.NewRow()
+            $row["FileName"] = $file.Name
+            $row["Size (KB)"] = [math]::Round($file.Length / 1KB, 2)
+            $row["LastWriteTime"] = $file.LastWriteTime
+            $table.Rows.Add($row)
+        }
+
+        $dgv.DataSource = $table
+        $form.Add_Shown({ $form.Activate() })
+        [void]$form.ShowDialog()
+    }
+}catch{
+    Write-Host "  Erro ao listar Prefetch: $_" -ForegroundColor Red
+}
+
+Write-Host ""
+Wait-ForEnter
+
+# =========================
+# ETAPA 6 - BAM KEY ENTRIES
+# =========================
+Clear-Host
+$h = Get-Date -Format "HH:mm:ss"
+
+Write-Host ("WARIK RADAR - ETAPA 6 - BAM KEY ENTRIES".PadRight(70)+$h) -ForegroundColor Cyan
+Write-Host "===================================================================="
+
+Write-Host "`nBAM ENTRIES:" -ForegroundColor Yellow
+Write-Host "--------------------------------------------------------------------"
+
+$UserTime = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" -ErrorAction SilentlyContinue).TimeZoneKeyName
+$UserBias = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" -ErrorAction SilentlyContinue).ActiveTimeBias
+$UserDay  = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" -ErrorAction SilentlyContinue).DaylightBias
+
+$bv = @("bam", "bam\State")
+$BamUsers = @()
+foreach($ii in $bv){
+    try{
+        $BamUsers += Get-ChildItem -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$($ii)\UserSettings\" -ErrorAction Stop | Select-Object -ExpandProperty PSChildName
+    }catch{}
+}
+$BamUsers = $BamUsers | Select-Object -Unique
+
+function Get-BamSignature {
+    param([string]$FilePath)
+    if(Test-Path -PathType Leaf -Path $FilePath){
+        $auth = (Get-AuthenticodeSignature -FilePath $FilePath -ErrorAction SilentlyContinue).Status
+        switch($auth){
+            "Valid"        { return "Assinatura Valida" }
+            "NotSigned"    { return "Sem Assinatura" }
+            "HashMismatch" { return "Hash Invalido" }
+            "NotTrusted"   { return "Nao Confiavel" }
+            default        { return "Desconhecido" }
+        }
+    }else{ return "Arquivo nao encontrado" }
+}
+
+$rpath = @("HKLM:\SYSTEM\CurrentControlSet\Services\bam\", "HKLM:\SYSTEM\CurrentControlSet\Services\bam\state\")
+$Bam = foreach($Sid in $BamUsers){
+    foreach($rp in $rpath){
+        $BamItems = Get-Item -Path "$($rp)UserSettings\$Sid" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Property
+        try{
+            $objSID = New-Object System.Security.Principal.SecurityIdentifier($Sid)
+            $User = $objSID.Translate([System.Security.Principal.NTAccount]).Value
+        }catch{ $User = $Sid }
+
+        foreach($Item in $BamItems){
+            $Key = Get-ItemProperty -Path "$($rp)UserSettings\$Sid" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty $Item
+            if($Key.length -eq 24){
+                $Hex = [System.BitConverter]::ToString($Key[7..0]) -replace "-", ""
+                $TimeLocal = Get-Date ([DateTime]::FromFileTime([Convert]::ToInt64($Hex, 16))) -Format "yyyy-MM-dd HH:mm:ss"
+                $TimeUTC   = Get-Date ([DateTime]::FromFileTimeUtc([Convert]::ToInt64($Hex, 16))) -Format "yyyy-MM-dd HH:mm:ss"
+                $TimeUser  = Get-Date ([DateTime]::FromFileTimeUtc([Convert]::ToInt64($Hex, 16))).AddMinutes($UserBias) -Format "yyyy-MM-dd HH:mm:ss"
+                $f = Split-Path -Leaf $Item
+                if($Item -match '^\\Device\\HarddiskVolume\d+\\(.+)$'){
+                    $path = Join-Path "C:\" $matches[1]
+                    $sig = Get-BamSignature -FilePath $path
+                }else{ $path = ""; $sig = "" }
+
+                [PSCustomObject]@{
+                    'Hora Examinador'           = $TimeLocal
+                    'Ultima Execucao (UTC)'     = $TimeUTC
+                    'Ultima Execucao (Usuario)' = $TimeUser
+                    'Aplicativo'                = $f
+                    'Caminho'                   = $path
+                    'Assinatura'                = $sig
+                    'Usuario'                   = $User
+                    'SID'                       = $Sid
+                }
+            }
+        }
+    }
+}
+
+if($Bam -and $Bam.Count -gt 0){
+    Write-Host "  $($Bam.Count) entrada(s) encontrada(s). Abrindo visualizador..." -ForegroundColor Green
+    $Bam | Out-GridView -Title "BAM key entries $($Bam.Count) - Fuso: ($UserTime) | Bias: ($UserBias) | DaylightBias: ($UserDay)"
+    Write-Host "  BAM verificado com sucesso." -ForegroundColor Green
+}else{
+    Write-Host "  Nenhuma entrada BAM encontrada." -ForegroundColor Red
+}
+
+Write-Host ""
+Write-Host "===================================================================="
+Write-Host "  WARIK RADAR FINALIZADO." -ForegroundColor Cyan
+Write-Host "===================================================================="
+Write-Host ""
+Wait-ForEnter
