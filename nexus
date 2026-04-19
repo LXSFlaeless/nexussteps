@@ -226,14 +226,28 @@ try{
 # --- MUICACHE ---
 Write-Host "`nMUICache (aplicativos executados):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
+$muiTargets = @(
+    @{ Label = "Xeno";           Pattern = "Xeno\.exe\.FriendlyAppName$" },
+    @{ Label = "Matrix/newui";   Pattern = "(newuimatrix|newui)\.exe\.FriendlyAppName$" },
+    @{ Label = "oldui";          Pattern = "oldui\.exe\.FriendlyAppName$" },
+    @{ Label = "Valex External"; Pattern = "Valex_External\.exe\.FriendlyAppName$" }
+)
 try{
-    $mui = Get-ItemProperty -Path "HKCR:\Local Settings\Software\Microsoft\Windows\Shell\MuiCache" -ErrorAction Stop
-    $props = $mui.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" -and $_.Name -match "matrix|matcha|xeno|external|newui|oldui|inject" }
-    if($props.Count -gt 0){
-        $props | %{ Write-Host "  -> $($_.Name)" -ForegroundColor Red }
-    }else{
-        Write-Host "  Nenhum suspeito encontrado" -ForegroundColor Green
+    $muiPath3 = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"
+    $mui = Get-ItemProperty -Path $muiPath3 -ErrorAction Stop
+    $found3 = $false
+    foreach($target in $muiTargets){
+        $props = $mui.PSObject.Properties | Where-Object { $_.Name -match $target.Pattern }
+        if($props.Count -gt 0){
+            Write-Host "  [$($target.Label)] RASTROS ENCONTRADOS:" -ForegroundColor Red
+            $props | %{
+                Write-Host "  -> $($_.Name)" -ForegroundColor Red
+                Write-Host "     Valor: $($_.Value)" -ForegroundColor DarkRed
+            }
+            $found3 = $true
+        }
     }
+    if(-not $found3){ Write-Host "  Nenhum suspeito encontrado" -ForegroundColor Green }
 }catch{ Write-Host "  Chave nao existe (Limpo)" -ForegroundColor Green }
 
 # --- APPSWITCHED (EXEs desde o inicio) ---
@@ -438,21 +452,30 @@ $h = Get-Date -Format "HH:mm:ss"
 Write-Host ("WARIK RADAR - ETAPA 4 - MUICACHE CHECK".PadRight(70)+$h) -ForegroundColor Cyan
 Write-Host "===================================================================="
 
-Write-Host "`nMUICache (newui.exe / oldui.exe):" -ForegroundColor Yellow
+Write-Host "`nMUICache (newui.exe / oldui.exe / Xeno / Valex):" -ForegroundColor Yellow
 Write-Host "--------------------------------------------------------------------"
+$muiTargets4 = @(
+    @{ Label = "Xeno";           Pattern = "Xeno\.exe\.FriendlyAppName$" },
+    @{ Label = "Matrix/newui";   Pattern = "(newuimatrix|newui)\.exe\.FriendlyAppName$" },
+    @{ Label = "oldui";          Pattern = "oldui\.exe\.FriendlyAppName$" },
+    @{ Label = "Valex External"; Pattern = "Valex_External\.exe\.FriendlyAppName$" }
+)
 try{
     $muiPath = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"
     $mui = Get-ItemProperty -Path $muiPath -ErrorAction Stop
-    $props = $mui.PSObject.Properties | Where-Object { $_.Name -match "newui|oldui" }
-    if($props.Count -gt 0){
-        Write-Host "  RASTROS ENCONTRADOS:" -ForegroundColor Red
-        $props | %{
-            Write-Host "  -> $($_.Name)" -ForegroundColor Red
-            Write-Host "     Valor: $($_.Value)" -ForegroundColor DarkRed
+    $found4 = $false
+    foreach($target in $muiTargets4){
+        $props = $mui.PSObject.Properties | Where-Object { $_.Name -match $target.Pattern }
+        if($props.Count -gt 0){
+            Write-Host "  [$($target.Label)] RASTROS ENCONTRADOS:" -ForegroundColor Red
+            $props | %{
+                Write-Host "  -> $($_.Name)" -ForegroundColor Red
+                Write-Host "     Valor: $($_.Value)" -ForegroundColor DarkRed
+            }
+            $found4 = $true
         }
-    }else{
-        Write-Host "  Nenhum rastro de newui/oldui encontrado" -ForegroundColor Green
     }
+    if(-not $found4){ Write-Host "  Nenhum rastro encontrado" -ForegroundColor Green }
 }catch{
     Write-Host "  Chave nao existe (Limpo)" -ForegroundColor Green
 }
