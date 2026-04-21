@@ -216,13 +216,26 @@ foreach($rp in $regPaths){
     }catch{ Write-Host "      Erro ao verificar" -ForegroundColor DarkYellow }
 }
 
-Show-Section "COMPATIBILITY ASSISTANT (EXEs executados)" "Yellow"
+Show-Section "COMPATIBILITY ASSISTANT STORE (EXEs executados)" "Yellow"
+$suspectExePattern = "(?i)(oldui|newui|newuimatrix|olduimatrix|matcha|map\.exe|app\.exe|valex|xeno|loader|launcher|svchost(?!\.exe$)|updater|audiomgmt|inject|cheat|hack|bypass)"
 try{
     $caPath = "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Store"
     $ca = Get-ItemProperty -Path $caPath -ErrorAction Stop
     $props = $ca.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
-    if($props.Count -gt 0){ $props | %{ Write-Host "    -> $($_.Name)" -ForegroundColor Red } }
-    else{ Write-Host "    Limpo" -ForegroundColor Green }
+    $caFound = $false
+    Write-Host "    Total de entradas: $($props.Count)" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "    [SUSPEITOS]" -ForegroundColor Red
+    Write-Host "    -------------------------------------------------------" -ForegroundColor DarkCyan
+    $props | Where-Object { $_.Name -match $suspectExePattern } | %{
+        Write-Host "    [!] $($_.Name)" -ForegroundColor Red
+        $caFound = $true
+    }
+    if(-not $caFound){ Write-Host "    Nenhum suspeito encontrado" -ForegroundColor Green }
+    Write-Host ""
+    Write-Host "    [TODAS AS ENTRADAS]" -ForegroundColor Cyan
+    Write-Host "    -------------------------------------------------------" -ForegroundColor DarkCyan
+    $props | Sort-Object Name | %{ Write-Host "    -> $($_.Name)" -ForegroundColor DarkGray }
 }catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
 
 Show-Section "SHIMCACHE / AppCompatCache (Historico de executaveis)" "Yellow"
@@ -236,12 +249,49 @@ try{
     }else{ Write-Host "    Limpo" -ForegroundColor Green }
 }catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
 
-Show-Section "WINRAR ArcHistory (.rar abertos)" "Yellow"
+Show-Section "WINRAR - ArcHistory (todos os .rar abertos)" "Yellow"
 try{
     $rar = Get-ItemProperty -Path "HKCU:\SOFTWARE\WinRAR\ArcHistory" -ErrorAction Stop
     $props = $rar.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
-    if($props.Count -gt 0){ $props | %{ Write-Host "    -> $($_.Value)" -ForegroundColor Red } }
-    else{ Write-Host "    Limpo" -ForegroundColor Green }
+    if($props.Count -gt 0){
+        $props | Sort-Object Name | %{
+            if($_.Value -match $suspectExePattern){
+                Write-Host "    [!] $($_.Value)" -ForegroundColor Red
+            }else{
+                Write-Host "    -> $($_.Value)" -ForegroundColor DarkGray
+            }
+        }
+    }else{ Write-Host "    Limpo" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "WINRAR - DialogEditHistory\ArcName (arquivos extraidos)" "Yellow"
+try{
+    $rarArc = Get-ItemProperty -Path "HKCU:\SOFTWARE\WinRAR\DialogEditHistory\ArcName" -ErrorAction Stop
+    $props = $rarArc.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
+    if($props.Count -gt 0){
+        $props | Sort-Object Name | %{
+            if($_.Value -match $suspectExePattern){
+                Write-Host "    [!] $($_.Value)" -ForegroundColor Red
+            }else{
+                Write-Host "    -> $($_.Value)" -ForegroundColor DarkGray
+            }
+        }
+    }else{ Write-Host "    Limpo" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "WINRAR - DialogEditHistory\FindNames (buscas feitas)" "Yellow"
+try{
+    $rarFind = Get-ItemProperty -Path "HKCU:\SOFTWARE\WinRAR\DialogEditHistory\FindNames" -ErrorAction Stop
+    $props = $rarFind.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
+    if($props.Count -gt 0){
+        $props | Sort-Object Name | %{
+            if($_.Value -match $suspectExePattern){
+                Write-Host "    [!] $($_.Value)" -ForegroundColor Red
+            }else{
+                Write-Host "    -> $($_.Value)" -ForegroundColor DarkGray
+            }
+        }
+    }else{ Write-Host "    Limpo" -ForegroundColor Green }
 }catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
 
 Show-Section "MUICACHE (Xeno / Matrix / Valex)" "Yellow"
@@ -302,8 +352,8 @@ try{
     }else{ Write-Host "    Limpo" -ForegroundColor Green }
 }catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
 
-Show-Section "RECENTDOCS (exe / lnk / rar / zip / dll / ahk / bat)" "Yellow"
-$allowedExt = @("exe","lnk","rar","zip","dll","ahk","bat","ps1","ini","cfg","json","folder")
+Show-Section "RECENTDOCS (exe / lnk / rar / zip / dll / ahk / bat / jar)" "Yellow"
+$allowedExt = @("exe","lnk","rar","zip","dll","ahk","bat","ps1","ini","cfg","json","folder","jar","7z","msi")
 try{
     $rdBase = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs"
     $subKeys = Get-ChildItem $rdBase -ErrorAction Stop
@@ -313,19 +363,27 @@ try{
         if($ext -notin $allowedExt){ continue }
         $vals = Get-ItemProperty -Path $sk.PSPath -ErrorAction SilentlyContinue
         $props = $vals.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" -and $_.Name -ne "MRUListEx" }
-        if($props.Count -gt 0){
-            Write-Host "    [$($sk.PSChildName)]" -ForegroundColor Cyan
-            foreach($p in $props){
-                try{
-                    $bytes = [byte[]]$p.Value
-                    $text = [System.Text.Encoding]::Unicode.GetString($bytes) -replace '[^\x20-\x7E]',''
-                    $text = $text.Trim()
-                    if($text.Length -gt 3 -and $text -match "\w"){
-                        Write-Host "    -> $text" -ForegroundColor Red
-                        $rdFound = $true
-                    }
-                }catch{}
+        $extEntries = @()
+        foreach($p in $props){
+            try{
+                $bytes = [byte[]]$p.Value
+                $text = [System.Text.Encoding]::Unicode.GetString($bytes) -replace '[^\x20-\x7E]',''
+                $text = $text.Trim()
+                if($text.Length -gt 3 -and $text -match "\w"){ $extEntries += $text }
+            }catch{}
+        }
+        if($extEntries.Count -gt 0){
+            Write-Host ""
+            Write-Host "    [$($sk.PSChildName)] - $($extEntries.Count) entrada(s)" -ForegroundColor Cyan
+            Write-Host "    -------------------------------------------------------" -ForegroundColor DarkCyan
+            $extEntries | %{
+                if($_ -match $suspectExePattern){
+                    Write-Host "    [!] $_" -ForegroundColor Red
+                }else{
+                    Write-Host "    -> $_" -ForegroundColor DarkGray
+                }
             }
+            $rdFound = $true
         }
     }
     if(-not $rdFound){ Write-Host "    Nenhum documento relevante encontrado" -ForegroundColor Green }
@@ -406,16 +464,18 @@ if(-not $foundApps){ Write-Host "    Nenhum suspeito encontrado" -ForegroundColo
 Wait-ForEnter
 
 # =========================
-# ETAPA 4 - MUICACHE CHECK
+# ETAPA 4 - MUICACHE & REGISTRY DEEP
 # =========================
-Show-Header "ETAPA 4 de 7" "MuiCache - Rastros de Execucao"
+Show-Header "ETAPA 4 de 7" "MuiCache + Registry de Execucao"
 
-Show-Section "MUICACHE DETALHADO (newui / oldui / Xeno / Valex)" "Yellow"
+Show-Section "MUICACHE DETALHADO - por categoria" "Yellow"
 $muiTargets4 = @(
-    @{ Label = "Xeno";           Pattern = "Xeno\.exe\.FriendlyAppName$" },
-    @{ Label = "Matrix/newui";   Pattern = "(newuimatrix|newui)\.exe\.FriendlyAppName$" },
-    @{ Label = "oldui";          Pattern = "oldui\.exe\.FriendlyAppName$" },
-    @{ Label = "Valex External"; Pattern = "Valex_External\.exe\.FriendlyAppName$" }
+    @{ Label = "Xeno";           Pattern = "(?i)xeno[^\\]*\.exe\.FriendlyAppName$" },
+    @{ Label = "Matrix / newui"; Pattern = "(?i)(newuimatrix|newui)[^\\]*\.exe\.FriendlyAppName$" },
+    @{ Label = "Matrix / oldui"; Pattern = "(?i)oldui[^\\]*\.exe\.FriendlyAppName$" },
+    @{ Label = "Matcha (map.exe)";  Pattern = "(?i)(map|app)\.exe\.FriendlyAppName$" },
+    @{ Label = "Valex External"; Pattern = "(?i)valex[^\\]*\.exe\.FriendlyAppName$" },
+    @{ Label = "Loader / Launcher"; Pattern = "(?i)(loader|launcher|svchost|updater|audiomgmt)\.exe\.FriendlyAppName$" }
 )
 try{
     $muiPath = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"
@@ -424,15 +484,133 @@ try{
     foreach($target in $muiTargets4){
         $props = $mui.PSObject.Properties | Where-Object { $_.Name -match $target.Pattern }
         if($props.Count -gt 0){
-            Write-Host "    [$($target.Label)] RASTRO:" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "    [$($target.Label)]" -ForegroundColor Cyan
+            Write-Host "    -------------------------------------------------------" -ForegroundColor DarkCyan
             $props | %{
-                Write-Host "    -> $($_.Name)" -ForegroundColor Red
-                Write-Host "       Valor: $($_.Value)" -ForegroundColor DarkRed
+                Write-Host "    [!] $($_.Name)" -ForegroundColor Red
+                Write-Host "        Valor: $($_.Value)" -ForegroundColor DarkRed
             }
             $found4 = $true
         }
     }
     if(-not $found4){ Write-Host "    Nenhum rastro encontrado" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "SHOWJUMPVIEW (app.exe / map.exe / oldui / newui / xeno / loader)" "Yellow"
+try{
+    $sjv = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FeatureUsage\ShowJumpView" -ErrorAction Stop
+    $props = $sjv.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
+    $sjvFound = $false
+    $props | %{
+        if($_.Name -match "(?i)(app\.exe|map\.exe|oldui|newui|xeno|loader\.exe)"){
+            Write-Host "    [!] $($_.Name) = $($_.Value)" -ForegroundColor Red
+            $sjvFound = $true
+        }
+    }
+    if(-not $sjvFound){ Write-Host "    Nenhum suspeito encontrado" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "APPSWITCHED (app.exe / map.exe / oldui / newui / xeno / loader)" "Yellow"
+try{
+    $asw = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FeatureUsage\AppSwitched" -ErrorAction Stop
+    $props = $asw.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
+    $aswFound = $false
+    $props | %{
+        if($_.Name -match "(?i)(app\.exe|map\.exe|oldui|newui|xeno|loader\.exe)"){
+            Write-Host "    [!] $($_.Name) = $($_.Value)" -ForegroundColor Red
+            $aswFound = $true
+        }
+    }
+    if(-not $aswFound){ Write-Host "    Nenhum suspeito encontrado" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "FILEEXTS .DLL - OpenWithList (DLL Injection Check)" "Yellow"
+try{
+    $dllExt = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.dll\OpenWithList" -ErrorAction Stop
+    $props = $dllExt.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" -and $_.Name -ne "MRUList" }
+    if($props.Count -gt 0){
+        Write-Host "    [!] DLLs associadas encontradas:" -ForegroundColor Red
+        $props | %{ Write-Host "    -> $($_.Value)" -ForegroundColor DarkRed }
+    }else{ Write-Host "    Limpo" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "TYPED PATHS (Caminhos digitados no Explorer)" "Yellow"
+try{
+    $tp = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths" -ErrorAction Stop
+    $props = $tp.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
+    if($props.Count -gt 0){
+        $props | Sort-Object Name | %{
+            if($_.Value -match $suspectExePattern){
+                Write-Host "    [!] $($_.Name): $($_.Value)" -ForegroundColor Red
+            }else{
+                Write-Host "    -> $($_.Name): $($_.Value)" -ForegroundColor DarkGray
+            }
+        }
+    }else{ Write-Host "    Limpo" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "APPCOMPAT PERSISTED (Programas persistentes)" "Yellow"
+try{
+    $pers = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Persisted" -ErrorAction Stop
+    $props = $pers.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
+    if($props.Count -gt 0){
+        $props | Sort-Object Name | %{
+            if($_.Name -match $suspectExePattern){
+                Write-Host "    [!] $($_.Name)" -ForegroundColor Red
+            }else{
+                Write-Host "    -> $($_.Name)" -ForegroundColor DarkGray
+            }
+        }
+    }else{ Write-Host "    Limpo" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "WORDPAD - Recent File List" "Yellow"
+try{
+    $wp = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Applets\Wordpad\Recent File List" -ErrorAction Stop
+    $props = $wp.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
+    if($props.Count -gt 0){
+        $props | Sort-Object Name | %{
+            if($_.Value -match $suspectExePattern){
+                Write-Host "    [!] $($_.Name): $($_.Value)" -ForegroundColor Red
+            }else{
+                Write-Host "    -> $($_.Name): $($_.Value)" -ForegroundColor DarkGray
+            }
+        }
+    }else{ Write-Host "    Limpo" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "DIRECTINPUT (Dispositivos de entrada usados)" "Yellow"
+try{
+    $di = Get-ChildItem "HKCU:\SOFTWARE\Microsoft\DirectInput" -ErrorAction Stop
+    if($di.Count -gt 0){
+        $di | %{ Write-Host "    -> $($_.PSChildName)" -ForegroundColor DarkGray }
+    }else{ Write-Host "    Limpo" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "VOLUME INFO CACHE (Drives conectados)" "Yellow"
+try{
+    $vic = Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows Search\VolumeInfoCache" -ErrorAction Stop
+    if($vic.Count -gt 0){
+        $vic | %{
+            $vals = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+            Write-Host "    -> Drive: $($_.PSChildName) | Label: $($vals.VolumeLabel) | Type: $($vals.DriveType)" -ForegroundColor DarkGray
+        }
+    }else{ Write-Host "    Nenhum drive registrado" -ForegroundColor Green }
+}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
+
+Show-Section "RADAR HeapLeakDetection (Apps com vazamento detectado)" "Yellow"
+try{
+    $radar = Get-ChildItem "HKLM:\SOFTWARE\Microsoft\RADAR\HeapLeakDetection\DiagnosedApplications" -ErrorAction Stop
+    if($radar.Count -gt 0){
+        $radar | %{
+            if($_.PSChildName -match $suspectExePattern){
+                Write-Host "    [!] $($_.PSChildName)" -ForegroundColor Red
+            }else{
+                Write-Host "    -> $($_.PSChildName)" -ForegroundColor DarkGray
+            }
+        }
+    }else{ Write-Host "    Nenhuma aplicacao diagnosticada" -ForegroundColor Green }
 }catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
 
 Wait-ForEnter
@@ -514,7 +692,7 @@ foreach($ii in $bv){
         $BamUsers += Get-ChildItem -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$($ii)\UserSettings\" -ErrorAction Stop | Select-Object -ExpandProperty PSChildName
     }catch{}
 }
-$BamUsers = $BamUsers | Select-Object -Unique
+$BamUsers = $BamUsers | Where-Object { $_ -match "1001" } | Select-Object -Unique
 
 function Get-BamSignature {
     param([string]$FilePath)
@@ -703,6 +881,19 @@ foreach($sk in $shellExKeys){
         $items | %{
             $name = $_.PSChildName
             $isKnown = $knownCLSIDs -contains $name -or $name -eq "EnhancedStorageShell" -or $name -eq "Offline Files"
+            # Ignorar entradas relacionadas ao Java
+            $isJava = $false
+            try{
+                $srv = Get-ItemProperty "$($_.PSPath)\InprocServer32" -ErrorAction SilentlyContinue
+                if($srv -and $srv."(default)" -match "java|jre|jvm|sun\.java|javaw"){
+                    $isJava = $true
+                }
+                $desc2 = (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue)."(default)"
+                if($desc2 -match "Java|Sun Microsystems"){
+                    $isJava = $true
+                }
+            }catch{}
+            if($isJava){ return }
             if($isKnown){
                 Write-Host "    [OK] $name" -ForegroundColor DarkGray
             }else{
@@ -724,6 +915,8 @@ try{
             $desc = $vals."(default)"
             $server = Get-ItemProperty "$($_.PSPath)\InprocServer32" -ErrorAction SilentlyContinue
             $serverPath = if($server){ $server."(default)" }else{ "" }
+            # Ignorar Java
+            if($desc -match "Java|Sun Microsystems" -or $serverPath -match "java|jre|jvm|javaw"){ return }
             if($serverPath -match $cheatPattern -or $desc -match $cheatPattern){
                 Write-Host "    [!] SUSPEITO: $clsidName" -ForegroundColor Red
                 if($desc){ Write-Host "        Nome   : $desc" -ForegroundColor DarkRed }
