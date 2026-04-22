@@ -179,7 +179,7 @@ try{
     }else{ Write-Host "    Nenhum rastro encontrado no Recent" -ForegroundColor Green }
 }catch{ Write-Host "    Erro ao acessar Recent" -ForegroundColor Red }
 
-Show-Section "OPENSAVEPIDLMRU (Arquivos abertos/salvos)" "Yellow"
+Show-Section "OPENSAVEPIDLMRU (loader / map / updater / newui / oldui / xeno / valex)" "Yellow"
 $systemProps = @("Count","Length","LongLength","Rank","SyncRoot","IsReadOnly","IsFixedSize","IsSynchronized","MRUListEx","PSPath","PSParentPath","PSChildName","PSDrive","PSProvider")
 $regPaths = @(
     "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32\OpenSavePidlMRU\exe",
@@ -188,36 +188,37 @@ $regPaths = @(
 )
 foreach($rp in $regPaths){
     $label = $rp.Split("\")[-1]
-    Write-Host "    [$label]" -ForegroundColor Cyan
     $regQueryPath = $rp -replace "HKCU:\\","HKCU\"
     try{
         $rawOutput = reg query $regQueryPath 2>&1
-        if($LASTEXITCODE -ne 0 -or $rawOutput -match "nao foi possivel|cannot find|error"){
-            Write-Host "      Limpo" -ForegroundColor Green; continue
-        }
+        if($LASTEXITCODE -ne 0 -or $rawOutput -match "nao foi possivel|cannot find|error"){ continue }
         $lines = $rawOutput | Where-Object { $_ -match "REG_BINARY" -and $_ -notmatch ($systemProps -join "|") }
-        if($lines.Count -gt 0){
-            Write-Host "      $($lines.Count) entrada(s)" -ForegroundColor Red
-            foreach($line in $lines){
-                $parts = $line.Trim() -split "\s{2,}"
-                $entryName = $parts[0]
-                try{
-                    $prop = (Get-ItemProperty -Path $rp -ErrorAction Stop).$entryName
-                    if($prop){
-                        $bytes = [byte[]]$prop
-                        $text = [System.Text.Encoding]::Unicode.GetString($bytes) -replace '[^\x20-\x7E]',''
-                        $text = $text.Trim()
-                        if($text.Length -gt 3){ Write-Host "      -> $text" -ForegroundColor Red }
-                        else{ Write-Host "      -> [binario - $entryName]" -ForegroundColor DarkRed }
+        $labelPrinted = $false
+        foreach($line in $lines){
+            $parts = $line.Trim() -split "\s{2,}"
+            $entryName = $parts[0]
+            try{
+                $prop = (Get-ItemProperty -Path $rp -ErrorAction Stop).$entryName
+                if($prop){
+                    $bytes = [byte[]]$prop
+                    $text = [System.Text.Encoding]::Unicode.GetString($bytes) -replace '[^\x20-\x7E]',''
+                    $text = $text.Trim()
+                    if($text -match "(?i)(loader|map|updater|newui|oldui|xeno|valex|matcha|app\.exe)"){
+                        if(-not $labelPrinted){
+                            Write-Host "    [$label]" -ForegroundColor Cyan
+                            $labelPrinted = $true
+                        }
+                        Write-Host "    [!] -> $text" -ForegroundColor Red
                     }
-                }catch{ Write-Host "      -> [ilegivel - $entryName]" -ForegroundColor DarkRed }
-            }
-        }else{ Write-Host "      Limpo" -ForegroundColor Green }
-    }catch{ Write-Host "      Erro ao verificar" -ForegroundColor DarkYellow }
+                }
+            }catch{}
+        }
+    }catch{}
 }
+Write-Host "    Verificacao concluida" -ForegroundColor Green
 
 Show-Section "COMPATIBILITY ASSISTANT STORE (EXEs executados)" "Yellow"
-$suspectExePattern = "(?i)(oldui|newui|newuimatrix|olduimatrix|matcha|map\.exe|app\.exe|valex|xeno|loader|launcher|svchost(?!\.exe$)|updater|audiomgmt|inject|cheat|hack|bypass)"
+$suspectExePattern = "(?i)(oldui|newui|newuimatrix|olduimatrix|\\matcha|map\.exe|valex|xeno|loader\.exe|updater\.exe|audiomgmt\.exe)"
 try{
     $caPath = "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Store"
     $ca = Get-ItemProperty -Path $caPath -ErrorAction Stop
@@ -227,7 +228,10 @@ try{
     Write-Host ""
     Write-Host "    [SUSPEITOS]" -ForegroundColor Red
     Write-Host "    -------------------------------------------------------" -ForegroundColor DarkCyan
-    $props | Where-Object { $_.Name -match $suspectExePattern } | %{
+    $props | Where-Object {
+        $_.Name -match $suspectExePattern -and
+        $_.Name -notmatch "(?i)(nvidia|capcut|adobe|microsoft|windows|system32|chrome|discord|steam)"
+    } | %{
         Write-Host "    [!] $($_.Name)" -ForegroundColor Red
         $caFound = $true
     }
@@ -242,11 +246,24 @@ Show-Section "SHIMCACHE / AppCompatCache (Historico de executaveis)" "Yellow"
 try{
     $shimPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache"
     $shim = Get-ItemProperty -Path $shimPath -ErrorAction Stop
-    $props = $shim.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
-    if($props.Count -gt 0){
-        Write-Host "    Chave encontrada com $($props.Count) entrada(s)" -ForegroundColor Red
-        $props | %{ Write-Host "    -> $($_.Name)" -ForegroundColor DarkRed }
-    }else{ Write-Host "    Limpo" -ForegroundColor Green }
+    $cacheData = $shim.AppCompatCache
+    if($cacheData){
+        $bytes = [byte[]]$cacheData
+        # Extrair todas as strings Unicode legíveis do binário (caminhos de exe)
+        $allText = [System.Text.Encoding]::Unicode.GetString($bytes)
+        # Pegar sequências que parecem caminhos de arquivo (contém \ e .exe)
+        $paths = [regex]::Matches($allText, '[A-Za-z]:\\[^\x00-\x1F"*<>|]{4,260}') | %{ $_.Value.Trim() }
+        $paths = $paths | Where-Object { $_ -match "\.exe" } | Select-Object -Unique
+
+        $shimFound = $false
+        $paths | %{
+            if($_ -match "(?i)(oldui|newui|matcha|valex|xeno|loader|updater)" -and $_ -notmatch "(?i)(google|lghub|onedrive|directxdatabase)"){
+                Write-Host "    [!] $_" -ForegroundColor Red
+                $shimFound = $true
+            }
+        }
+        if(-not $shimFound){ Write-Host "    Nenhum suspeito encontrado no ShimCache" -ForegroundColor Green }
+    }else{ Write-Host "    Dados nao encontrados" -ForegroundColor DarkYellow }
 }catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
 
 Show-Section "WINRAR - ArcHistory (todos os .rar abertos)" "Yellow"
@@ -306,7 +323,10 @@ try{
     $mui = Get-ItemProperty -Path $muiPath3 -ErrorAction Stop
     $found3 = $false
     foreach($target in $muiTargets){
-        $props = $mui.PSObject.Properties | Where-Object { $_.Name -match $target.Pattern }
+        $props = $mui.PSObject.Properties | Where-Object {
+            $_.Name -match $target.Pattern -and
+            (-not $target.Exclude -or $_.Name -notmatch $target.Exclude)
+        }
         if($props.Count -gt 0){
             Write-Host "    [$($target.Label)] RASTRO:" -ForegroundColor Red
             $props | %{
@@ -319,22 +339,14 @@ try{
     if(-not $found3){ Write-Host "    Nenhum suspeito encontrado" -ForegroundColor Green }
 }catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
 
-Show-Section "APPSWITCHED (EXEs alternados)" "Yellow"
-try{
-    $asw = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FeatureUsage\AppSwitched" -ErrorAction Stop
-    $props = $asw.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
-    if($props.Count -gt 0){ $props | %{ Write-Host "    -> $($_.Name)" -ForegroundColor Red } }
-    else{ Write-Host "    Limpo" -ForegroundColor Green }
-}catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
-
-Show-Section "LASTVISITEDPIDLMRU (Arquivos executados/injetados)" "Yellow"
+Show-Section "LASTVISITEDPIDLMRU (loader / map / updater / newui / oldui)" "Yellow"
 try{
     $lvPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32\LastVisitedPidlMRU"
     $regQueryPath = $lvPath -replace "HKCU:\\","HKCU\"
     $rawOutput = reg query $regQueryPath 2>&1
     $lines = $rawOutput | Where-Object { $_ -match "REG_BINARY" }
     if($lines.Count -gt 0){
-        Write-Host "    $($lines.Count) entrada(s)" -ForegroundColor Red
+        $lvFound = $false
         foreach($line in $lines){
             $parts = $line.Trim() -split "\s{2,}"
             $entryName = $parts[0]
@@ -344,16 +356,19 @@ try{
                     $bytes = [byte[]]$prop
                     $text = [System.Text.Encoding]::Unicode.GetString($bytes) -replace '[^\x20-\x7E]',''
                     $text = $text.Trim()
-                    if($text.Length -gt 3){ Write-Host "    -> $text" -ForegroundColor Red }
-                    else{ Write-Host "    -> [binario - $entryName]" -ForegroundColor DarkRed }
+                    if($text -match "(?i)(loader|map|updater|newui|oldui)\.exe"){
+                        Write-Host "    [!] -> $text" -ForegroundColor Red
+                        $lvFound = $true
+                    }
                 }
-            }catch{ Write-Host "    -> [ilegivel - $entryName]" -ForegroundColor DarkRed }
+            }catch{}
         }
+        if(-not $lvFound){ Write-Host "    Nenhum suspeito encontrado" -ForegroundColor Green }
     }else{ Write-Host "    Limpo" -ForegroundColor Green }
 }catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
 
 Show-Section "RECENTDOCS (exe / lnk / rar / zip / dll / ahk / bat / jar)" "Yellow"
-$allowedExt = @("exe","lnk","rar","zip","dll","ahk","bat","ps1","ini","cfg","json","folder","jar","7z","msi")
+$allowedExt = @("exe","lnk","rar","zip","dll","ahk","bat","json","jar","7z","msi")
 try{
     $rdBase = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs"
     $subKeys = Get-ChildItem $rdBase -ErrorAction Stop
@@ -475,14 +490,17 @@ $muiTargets4 = @(
     @{ Label = "Matrix / oldui"; Pattern = "(?i)oldui[^\\]*\.exe\.FriendlyAppName$" },
     @{ Label = "Matcha (map.exe)";  Pattern = "(?i)(map|app)\.exe\.FriendlyAppName$" },
     @{ Label = "Valex External"; Pattern = "(?i)valex[^\\]*\.exe\.FriendlyAppName$" },
-    @{ Label = "Loader / Launcher"; Pattern = "(?i)(loader|launcher|svchost|updater|audiomgmt)\.exe\.FriendlyAppName$" }
+    @{ Label = "Loader / Launcher"; Pattern = "(?i)(loader|launcher|updater|audiomgmt)\.exe\.FriendlyAppName$"; Exclude = "(?i)google" }
 )
 try{
     $muiPath = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"
     $mui = Get-ItemProperty -Path $muiPath -ErrorAction Stop
     $found4 = $false
     foreach($target in $muiTargets4){
-        $props = $mui.PSObject.Properties | Where-Object { $_.Name -match $target.Pattern }
+        $props = $mui.PSObject.Properties | Where-Object {
+            $_.Name -match $target.Pattern -and
+            (-not $target.Exclude -or $_.Name -notmatch $target.Exclude)
+        }
         if($props.Count -gt 0){
             Write-Host ""
             Write-Host "    [$($target.Label)]" -ForegroundColor Cyan
@@ -511,13 +529,13 @@ try{
     if(-not $sjvFound){ Write-Host "    Nenhum suspeito encontrado" -ForegroundColor Green }
 }catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
 
-Show-Section "APPSWITCHED (app.exe / map.exe / oldui / newui / xeno / loader)" "Yellow"
+Show-Section "APPSWITCHED (loader / map / updater / newui / oldui)" "Yellow"
 try{
     $asw = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FeatureUsage\AppSwitched" -ErrorAction Stop
     $props = $asw.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" }
     $aswFound = $false
     $props | %{
-        if($_.Name -match "(?i)(app\.exe|map\.exe|oldui|newui|xeno|loader\.exe)"){
+        if($_.Name -match "(?i)(^|\\)(loader|map|updater|newui|oldui)\.exe"){
             Write-Host "    [!] $($_.Name) = $($_.Value)" -ForegroundColor Red
             $aswFound = $true
         }
@@ -857,7 +875,6 @@ $shellExKeys = @(
     @{ Path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ShellServiceObjects";        Label = "ShellServiceObjects" },
     @{ Path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ShellIconOverlayIdentifiers";Label = "ShellIconOverlayIdentifiers" }
 )
-# CLSIDs conhecidos do Windows (normais)
 $knownCLSIDs = @(
     "{083863F1-70DE-11d0-BD40-00A0C911CE86}","{23170F69-40C1-278A-1000-000100020000}",
     "{00020424-0000-0000-C000-000000000046}","{00020425-0000-0000-C000-000000000046}",
@@ -877,55 +894,50 @@ $knownCLSIDs = @(
 foreach($sk in $shellExKeys){
     try{
         $items = Get-ChildItem $sk.Path -ErrorAction Stop
-        Write-Host "    [$($sk.Label)] $($items.Count) entrada(s):" -ForegroundColor Cyan
-        $items | %{
-            $name = $_.PSChildName
-            $isKnown = $knownCLSIDs -contains $name -or $name -eq "EnhancedStorageShell" -or $name -eq "Offline Files"
-            # Ignorar entradas relacionadas ao Java
-            $isJava = $false
-            try{
-                $srv = Get-ItemProperty "$($_.PSPath)\InprocServer32" -ErrorAction SilentlyContinue
-                if($srv -and $srv."(default)" -match "java|jre|jvm|sun\.java|javaw"){
-                    $isJava = $true
-                }
-                $desc2 = (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue)."(default)"
-                if($desc2 -match "Java|Sun Microsystems"){
-                    $isJava = $true
-                }
-            }catch{}
-            if($isJava){ return }
-            if($isKnown){
-                Write-Host "    [OK] $name" -ForegroundColor DarkGray
-            }else{
-                Write-Host "    [!] DESCONHECIDO: $name" -ForegroundColor Red
+        $suspicious = @()
+        foreach($item in $items){
+            $desc = (Get-ItemProperty $item.PSPath -ErrorAction SilentlyContinue)."(default)"
+            $srv = (Get-ItemProperty "$($item.PSPath)\InprocServer32" -ErrorAction SilentlyContinue)."(default)"
+            $combined = "$desc $srv"
+            if($combined -match "(?i)(oldui|newui|matcha|valex|xeno|loader|updater)"){
+                $suspicious += @{ Name = $item.PSChildName; Desc = $desc; DLL = $srv }
             }
+        }
+        if($suspicious.Count -gt 0){
+            Write-Host "    [$($sk.Label)] $($suspicious.Count) SUSPEITO(S):" -ForegroundColor Red
+            $suspicious | %{
+                Write-Host "    [!] $($_.Name)$(if($_.Desc){" - $($_.Desc)"})" -ForegroundColor Red
+                if($_.DLL){ Write-Host "        DLL: $($_.DLL)" -ForegroundColor DarkRed }
+            }
+        }else{
+            Write-Host "    [$($sk.Label)] Nenhum suspeito encontrado" -ForegroundColor Green
         }
     }catch{ Write-Host "    [$($sk.Label)] Chave nao existe" -ForegroundColor Green }
 }
 
 # --- CLASSES CLSID (injecao via pop-up) ---
-Show-Section "HKCU\Classes\clsid (Todos os CLSIDs registrados)" "Yellow"
+Show-Section "HKCU\Classes\clsid (Suspeitos de injecao)" "Yellow"
 try{
     $clsid = Get-ChildItem "HKCU:\Software\Classes\clsid" -ErrorAction Stop
     if($clsid.Count -gt 0){
-        Write-Host "    $($clsid.Count) entrada(s) encontrada(s):" -ForegroundColor Cyan
+        $clsidFound = $false
         $clsid | %{
             $clsidName = $_.PSChildName
             $vals = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
             $desc = $vals."(default)"
             $server = Get-ItemProperty "$($_.PSPath)\InprocServer32" -ErrorAction SilentlyContinue
             $serverPath = if($server){ $server."(default)" }else{ "" }
-            # Ignorar Java
             if($desc -match "Java|Sun Microsystems" -or $serverPath -match "java|jre|jvm|javaw"){ return }
-            if($serverPath -match $cheatPattern -or $desc -match $cheatPattern){
+            if($serverPath -match $suspectExePattern -or $desc -match $suspectExePattern -or
+               $serverPath -match "(?i)(oldui|newui|matcha|map\.exe|valex|xeno|loader|updater|audiomgmt)" -or
+               $desc -match "(?i)(oldui|newui|matcha|valex|xeno|loader|updater)"){
                 Write-Host "    [!] SUSPEITO: $clsidName" -ForegroundColor Red
-                if($desc){ Write-Host "        Nome   : $desc" -ForegroundColor DarkRed }
-                if($serverPath){ Write-Host "        DLL    : $serverPath" -ForegroundColor DarkRed }
-            }else{
-                Write-Host "    -> $clsidName$(if($desc){" ($desc)"})" -ForegroundColor DarkGray
-                if($serverPath){ Write-Host "       DLL: $serverPath" -ForegroundColor DarkGray }
+                if($desc){ Write-Host "        Nome: $desc" -ForegroundColor DarkRed }
+                if($serverPath){ Write-Host "        DLL : $serverPath" -ForegroundColor DarkRed }
+                $clsidFound = $true
             }
         }
+        if(-not $clsidFound){ Write-Host "    Nenhum CLSID suspeito encontrado" -ForegroundColor Green }
     }else{ Write-Host "    Limpo" -ForegroundColor Green }
 }catch{ Write-Host "    Chave nao existe (Limpo)" -ForegroundColor Green }
 
